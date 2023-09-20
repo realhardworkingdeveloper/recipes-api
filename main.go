@@ -115,15 +115,28 @@ func init() {
 // 	c.JSON(http.StatusOK, listOfRecipes)
 // }
 
+func AuthMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.GetHeader("X-API-KEY") != os.Getenv("X_API_KEY") {
+			c.AbortWithStatus(401)
+		}
+	}
+}
+
 func main() {
 	router := gin.Default()
 
-	router.POST("/recipes", recipesHandler.NewRecipeHandler)
-	router.GET("/recipes", recipesHandler.ListRecipesHandler)
-	router.PUT("/recipes/:id", recipesHandler.UpdateRecipeHandler)
-	router.DELETE("/recipes/:id", recipesHandler.DeleteRecipeHandler)
-	router.GET("/recipes/:id", recipesHandler.GetOneRecipeHandler)
-	// router.GET("/recipes/search", SearchRecipesHandler)
+	router.RouterGroup.GET("/recipes", recipesHandler.ListRecipesHandler)
+
+	authorized := router.Group("/")
+	authorized.Use(AuthMiddleware())
+	{
+		authorized.POST("/recipes", recipesHandler.NewRecipeHandler)
+		authorized.PUT("/recipes/:id", recipesHandler.UpdateRecipeHandler)
+		authorized.DELETE("/recipes/:id", recipesHandler.DeleteRecipeHandler)
+		authorized.GET("/recipes/:id", recipesHandler.GetOneRecipeHandler)
+		// router.GET("/recipes/search", SearchRecipesHandler)
+	}
 
 	router.Run()
 }
