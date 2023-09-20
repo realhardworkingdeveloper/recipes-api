@@ -84,6 +84,14 @@ func (handler *RecipesHandler) ListRecipesHandler(c *gin.Context) {
 }
 
 func (handler *RecipesHandler) NewRecipeHandler(c *gin.Context) {
+	// Auth for only NewRecipeHandler
+	// if c.GetHeader("X-API-KEY") != os.Getenv("X_API_KEY") {
+	// 	c.JSON(http.StatusUnauthorized, gin.H{
+	// 		"error": "API key not provided or invalid",
+	// 	})
+
+	// 	return
+	// }
 	var recipe models.Recipe
 
 	if err := c.ShouldBindJSON(&recipe); err != nil {
