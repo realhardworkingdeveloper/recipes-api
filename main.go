@@ -15,14 +15,18 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
 	"log"
 	"os"
 	"recipes-api/handlers"
 	"time"
 
+	"github.com/gin-contrib/sessions"
+	redisStore "github.com/gin-contrib/sessions/redis"
 	"github.com/gin-gonic/gin"
 	"github.com/go-redis/redis"
 
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -38,6 +42,7 @@ type Recipe struct {
 	PublishedAt  time.Time          `json:"publishedAt" bson:"publishedAt"`
 }
 
+var authHandler *handlers.AuthHandler
 var recipesHandler *handlers.RecipesHandler
 
 func init() {
@@ -75,6 +80,26 @@ func init() {
 	log.Println(status)
 
 	recipesHandler = handlers.NewRecipesHandler(ctx, collection, redisClient)
+
+	collectionUsers := client.Database(os.Getenv("MONGO_DATABASE")).Collection("users")
+	authHandler = handlers.NewAuthHandler(ctx, collectionUsers)
+
+	if userCount, _ := collectionUsers.CountDocuments(ctx, bson.M{}); userCount == 0 {
+		users := map[string]string{
+			"admin":      "fCRmh4Q2J7Rseqkz",
+			"packt":      "RE4zfHB35VPtTkbT",
+			"mlabouardy": "L3nSFRcZzNQ67bcc",
+		}
+
+		h := sha256.New()
+
+		for username, password := range users {
+			collectionUsers.InsertOne(ctx, bson.M{
+				"username": username,
+				"password": string(h.Sum([]byte(password))),
+			})
+		}
+	}
 
 	// var listOfRecipes []interface{}
 
@@ -115,21 +140,20 @@ func init() {
 // 	c.JSON(http.StatusOK, listOfRecipes)
 // }
 
-func AuthMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		if c.GetHeader("X-API-KEY") != os.Getenv("X_API_KEY") {
-			c.AbortWithStatus(401)
-		}
-	}
-}
-
 func main() {
 	router := gin.Default()
 
-	router.RouterGroup.GET("/recipes", recipesHandler.ListRecipesHandler)
+	store, _ := redisStore.NewStore(10, "tcp", "localhost:6379", "", []byte("secret"))
+	router.Use(sessions.Sessions("recipes_api", store))
+
+	router.GET("/recipes", recipesHandler.ListRecipesHandler)
+
+	router.POST("/signin", authHandler.SignInHandler)
+	router.POST("/signout", authHandler.SignOutHandler)
+	router.POST("/refresh", authHandler.RefreshHandler)
 
 	authorized := router.Group("/")
-	authorized.Use(AuthMiddleware())
+	authorized.Use(authHandler.AuthMiddleware())
 	{
 		authorized.POST("/recipes", recipesHandler.NewRecipeHandler)
 		authorized.PUT("/recipes/:id", recipesHandler.UpdateRecipeHandler)
